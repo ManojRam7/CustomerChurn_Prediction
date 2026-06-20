@@ -1,5 +1,48 @@
+# Python
 __pycache__/
-*.pyc
-*.ipynb_checkpoints
-.env
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
 venv/
+.venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.*
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Large generated files (use reports/ folder only)
+eda_report.html
+
+# Model artifacts (optional: uncomment if you prefer not to track large .pkl files)
+# models/*.pkl
+
+# Data (large files — use DVC or Git LFS for big CSVs)
+# data/raw/*.csv
+# data/processed/*.csv
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml

@@ -7,55 +7,79 @@ on:
     branches: [main]
 
 jobs:
-  build-test-deploy:
+  # ── Test: runs on every push and PR ───────────────────────────────────────
+  test:
+    name: Test
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
-    - name: Install coverage
-      run: pip install pytest-cov
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-cov httpx
 
+      - name: Run tests with coverage
+        run: |
+          PYTHONPATH=. pytest --cov=src --cov=app --cov-report=term --cov-report=xml -v
 
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
 
-    - name: Run tests with coverage
-      run: |
-        PYTHONPATH=. pytest --cov=src --cov=app --cov-report=term
+  # ── Build & Push: runs only on push to main (never on PRs) ────────────────
+  build-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Build and push Docker image (amd64)
-      run: |
-        docker buildx build --platform linux/amd64 \
-          -t manojram7/customer-churn-api:${{ github.sha }} \
-          --push .
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: Azure Login
-      uses: azure/login@v2
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            manojram7/customer-churn-api:latest
+            manojram7/customer-churn-api:${{ github.sha }}
+          cache-from: type=registry,ref=manojram7/customer-churn-api:latest
+          cache-to: type=inline
 
-    - name: Deploy to Azure Container App
-      run: |
-        az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        az containerapp update \
-          --name ${{ secrets.AZURE_CONTAINERAPP_NAME }} \
-          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-          --image manojram7/customer-churn-api:${{ github.sha }}
+      - name: Image summary
+        run: |
+          echo "### Docker Image Published ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repository:** manojram7/customer-churn-api" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags:** \`latest\`, \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY

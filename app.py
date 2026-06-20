@@ -1,24 +1,39 @@
-# code version 3.1 for app.py with frontend integration
-import joblib
-import pandas as pd
-from fastapi import FastAPI, HTTPException, Request, Form
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, validator
+"""
+Customer Churn Prediction API
+FastAPI application serving both a web UI and REST API for telecom customer churn prediction.
+"""
+
 from typing import List
 
-# Load preprocessor, model, and model columns at startup
-preprocessor = joblib.load('models/preprocessor.pkl')
-model = joblib.load('models/random_forest_churn_from_script.pkl')
-model_columns = joblib.load('models/model_columns.pkl')
+import joblib
+import pandas as pd
+from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, field_validator
 
-app = FastAPI(title="Customer Churn Prediction API")
+# Load preprocessor, model, and model columns at startup
+preprocessor = joblib.load("models/preprocessor.pkl")
+model = joblib.load("models/random_forest_churn_from_script.pkl")
+model_columns = joblib.load("models/model_columns.pkl")
+
+app = FastAPI(
+    title="Customer Churn Prediction API",
+    description="Predict telecom customer churn using a trained Random Forest model.",
+    version="1.0.0",
+)
 templates = Jinja2Templates(directory="templates")
 
-# --- HTML Frontend ---
+
+# ── HTML Frontend ──────────────────────────────────────────────────────────────
+
 @app.get("/", response_class=HTMLResponse)
 def form_get(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "prediction": None, "form_data": {}})
+    """Render the churn prediction web form."""
+    return templates.TemplateResponse(
+        request, "index.html", {"prediction": None, "form_data": {}}
+    )
+
 
 @app.post("/", response_class=HTMLResponse)
 async def form_post(
@@ -33,8 +48,9 @@ async def form_post(
     Subscription_Type: str = Form(...),
     Contract_Length: str = Form(...),
     Total_Spend: float = Form(...),
-    Last_Interaction: int = Form(...)
+    Last_Interaction: int = Form(...),
 ):
+    """Handle form submission and return churn prediction."""
     form_data = {
         "CustomerID": CustomerID,
         "Age": Age,
@@ -46,13 +62,24 @@ async def form_post(
         "Subscription_Type": Subscription_Type,
         "Contract_Length": Contract_Length,
         "Total_Spend": Total_Spend,
-        "Last_Interaction": Last_Interaction
+        "Last_Interaction": Last_Interaction,
     }
     try:
-        data = [[
-            CustomerID, Age, Gender, Tenure, Usage_Frequency, Support_Calls,
-            Payment_Delay, Subscription_Type, Contract_Length, Total_Spend, Last_Interaction
-        ]]
+        data = [
+            [
+                CustomerID,
+                Age,
+                Gender,
+                Tenure,
+                Usage_Frequency,
+                Support_Calls,
+                Payment_Delay,
+                Subscription_Type,
+                Contract_Length,
+                Total_Spend,
+                Last_Interaction,
+            ]
+        ]
         df = pd.DataFrame(data, columns=model_columns)
         processed = preprocessor.transform(df)
         processed = pd.DataFrame(processed, columns=model_columns)
@@ -61,234 +88,13 @@ async def form_post(
     except Exception as e:
         prediction = f"Error: {str(e)}"
     return templates.TemplateResponse(
+        request,
         "index.html",
-        {"request": request, "prediction": prediction, "form_data": form_data}
+        {"prediction": prediction, "form_data": form_data},
     )
 
-# --- API Backend (optional, for Postman etc.) ---
-class CustomerRow(BaseModel):
-    CustomerID: int
-    Age: int
-    Gender: str
-    Tenure: int
-    Usage_Frequency: int
-    Support_Calls: int
-    Payment_Delay: int
-    Subscription_Type: str
-    Contract_Length: str
-    Total_Spend: float
-    Last_Interaction: int
 
-    @validator('Gender')
-    def gender_allowed(cls, v):
-        if v not in ['Male', 'Female']:
-            raise ValueError('Gender must be Male or Female')
-        return v
-
-    @validator('Subscription_Type')
-    def subscription_allowed(cls, v):
-        if v not in ['Basic', 'Standard', 'Premium']:
-            raise ValueError('Invalid subscription type')
-        return v
-
-    @validator('Contract_Length')
-    def contract_allowed(cls, v):
-        if v not in ['Monthly','Quarterly', 'Annual']:
-            raise ValueError('Invalid contract length')
-        return v
-
-class CustomerData(BaseModel):
-    data: List[CustomerRow]
-
-@app.post("/predict")
-def predict(customer_data: CustomerData):
-    columns = model_columns
-    data_rows = [[
-        row.CustomerID, row.Age, row.Gender, row.Tenure, row.Usage_Frequency,
-        row.Support_Calls, row.Payment_Delay, row.Subscription_Type,
-        row.Contract_Length, row.Total_Spend, row.Last_Interaction
-    ] for row in customer_data.data]
-    for row in data_rows:
-        if len(row) != len(columns):
-            raise HTTPException(status_code=400, detail=f"Each row must have {len(columns)} values--[Invalid input shape]")
-    try:
-        df = pd.DataFrame(data_rows, columns=columns)
-        processed = preprocessor.transform(df)
-        processed = pd.DataFrame(processed, columns=model_columns)
-        preds = model.predict(processed)
-        return {"predictions": preds.tolist()}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-# --- Utility Endpoints ---
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-@app.get("/model_info")
-def model_info():
-    return {"model": "RandomForest", "version": "1.0"}
-
-@app.post("/reload_model")
-def reload_model():
-    global model
-    model = joblib.load('models/random_forest_churn_from_script.pkl')
-    return {"status": "model reloaded"}
-
-
-
-
-
-
-
-
-
-'''
-
-# code version 3.0 for app.py with frondtend integration
-import joblib
-import pandas as pd
-from fastapi import FastAPI, HTTPException, Request, Form
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, validator
-from typing import List
-
-# Load preprocessor, model, and model columns at startup
-preprocessor = joblib.load('models/preprocessor.pkl')
-model = joblib.load('models/random_forest_churn_from_script.pkl')
-model_columns = joblib.load('models/model_columns.pkl')
-
-app = FastAPI(title="Customer Churn Prediction API")
-templates = Jinja2Templates(directory="templates")
-
-# --- HTML Frontend ---
-@app.get("/", response_class=HTMLResponse)
-def form_get(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "prediction": None})
-
-@app.post("/", response_class=HTMLResponse)
-async def form_post(
-    request: Request,
-    CustomerID: int = Form(...),
-    Age: int = Form(...),
-    Gender: str = Form(...),
-    Tenure: int = Form(...),
-    Usage_Frequency: int = Form(...),
-    Support_Calls: int = Form(...),
-    Payment_Delay: int = Form(...),
-    Subscription_Type: str = Form(...),
-    Contract_Length: str = Form(...),
-    Total_Spend: float = Form(...),
-    Last_Interaction: int = Form(...)
-):
-    try:
-        data = [[
-            CustomerID, Age, Gender, Tenure, Usage_Frequency, Support_Calls,
-            Payment_Delay, Subscription_Type, Contract_Length, Total_Spend, Last_Interaction
-        ]]
-        df = pd.DataFrame(data, columns=model_columns)
-        processed = preprocessor.transform(df)
-        processed = pd.DataFrame(processed, columns=model_columns)
-        pred = model.predict(processed)[0]
-        prediction = "Churn" if pred == 1 else "No Churn"
-    except Exception as e:
-        prediction = f"Error: {str(e)}"
-    return templates.TemplateResponse("index.html", {"request": request, "prediction": prediction})
-
-# --- API Backend ---
-class CustomerRow(BaseModel):
-    CustomerID: int
-    Age: int
-    Gender: str
-    Tenure: int
-    Usage_Frequency: int
-    Support_Calls: int
-    Payment_Delay: int
-    Subscription_Type: str
-    Contract_Length: str
-    Total_Spend: float
-    Last_Interaction: int
-
-    @validator('Gender')
-    def gender_allowed(cls, v):
-        if v not in ['Male', 'Female']:
-            raise ValueError('Gender must be Male or Female')
-        return v
-
-    @validator('Subscription_Type')
-    def subscription_allowed(cls, v):
-        if v not in ['Basic', 'Standard', 'Premium']:
-            raise ValueError('Invalid subscription type')
-        return v
-
-    @validator('Contract_Length')
-    def contract_allowed(cls, v):
-        if v not in ['Monthly','Quarterly','Annual']:
-            raise ValueError('Invalid contract length')
-        return v
-
-class CustomerData(BaseModel):
-    data: List[CustomerRow]
-
-@app.post("/predict")
-def predict(customer_data: CustomerData):
-    columns = model_columns
-    data_rows = [[
-        row.CustomerID, row.Age, row.Gender, row.Tenure, row.Usage_Frequency,
-        row.Support_Calls, row.Payment_Delay, row.Subscription_Type,
-        row.Contract_Length, row.Total_Spend, row.Last_Interaction
-    ] for row in customer_data.data]
-    for row in data_rows:
-        if len(row) != len(columns):
-            raise HTTPException(status_code=400, detail=f"Each row must have {len(columns)} values--[Invalid input shape]")
-    try:
-        df = pd.DataFrame(data_rows, columns=columns)
-        processed = preprocessor.transform(df)
-        processed = pd.DataFrame(processed, columns=model_columns)
-        preds = model.predict(processed)
-        return {"predictions": preds.tolist()}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-# --- Utility Endpoints ---
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-@app.get("/model_info")
-def model_info():
-    return {"model": "RandomForest", "version": "1.0"}
-
-@app.post("/reload_model")
-def reload_model():
-    global model
-    model = joblib.load('models/random_forest_churn_from_script.pkl')
-    return {"status": "model reloaded"}
-
-'''
-
-
-
-
-'''
-## code version 2.0 for app.py with  backend integration of pydantic model
-import joblib
-import pandas as pd
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, validator
-from typing import List
-
-# Load preprocessor, model, and model columns at startup
-preprocessor = joblib.load('models/preprocessor.pkl')
-model = joblib.load('models/random_forest_churn_from_script.pkl')
-model_columns = joblib.load('models/model_columns.pkl')
-
-app = FastAPI(title="Customer Churn Prediction API")
+# ── REST API ───────────────────────────────────────────────────────────────────
 
 class CustomerRow(BaseModel):
     CustomerID: int
@@ -303,135 +109,90 @@ class CustomerRow(BaseModel):
     Total_Spend: float
     Last_Interaction: int
 
-    @validator('Gender')
-    def gender_allowed(cls, v):
-        if v not in ['Male', 'Female']:
-            raise ValueError('Gender must be Male or Female')
+    @field_validator("Gender")
+    @classmethod
+    def gender_allowed(cls, v: str) -> str:
+        if v not in ("Male", "Female"):
+            raise ValueError("Gender must be 'Male' or 'Female'")
         return v
 
-    @validator('Subscription_Type')
-    def subscription_allowed(cls, v):
-        if v not in ['Basic', 'Standard', 'Premium']:
-            raise ValueError('Invalid subscription type')
+    @field_validator("Subscription_Type")
+    @classmethod
+    def subscription_allowed(cls, v: str) -> str:
+        if v not in ("Basic", "Standard", "Premium"):
+            raise ValueError("Subscription_Type must be 'Basic', 'Standard', or 'Premium'")
         return v
 
-    @validator('Contract_Length')
-    def contract_allowed(cls, v):
-        if v not in ['Monthly', '12m', '24m', 'Annual']:
-            raise ValueError('Invalid contract length')
+    @field_validator("Contract_Length")
+    @classmethod
+    def contract_allowed(cls, v: str) -> str:
+        if v not in ("Monthly", "Quarterly", "Annual"):
+            raise ValueError("Contract_Length must be 'Monthly', 'Quarterly', or 'Annual'")
         return v
+
 
 class CustomerData(BaseModel):
     data: List[CustomerRow]
 
-@app.post("/predict")
+
+@app.post("/predict", summary="Predict churn for one or more customers")
 def predict(customer_data: CustomerData):
+    """
+    Accept a list of customer records and return churn predictions.
+    Returns 0 (No Churn) or 1 (Churn) for each record.
+    """
     columns = model_columns
-    print("Expected columns:", columns)
-    # Convert list of CustomerRow objects to list of lists in correct order
-    data_rows = [[
-        row.CustomerID, row.Age, row.Gender, row.Tenure, row.Usage_Frequency,
-        row.Support_Calls, row.Payment_Delay, row.Subscription_Type,
-        row.Contract_Length, row.Total_Spend, row.Last_Interaction
-    ] for row in customer_data.data]
-    print("Received data:", data_rows)
-    print("Expected number of columns:", len(columns))
+    data_rows = [
+        [
+            row.CustomerID,
+            row.Age,
+            row.Gender,
+            row.Tenure,
+            row.Usage_Frequency,
+            row.Support_Calls,
+            row.Payment_Delay,
+            row.Subscription_Type,
+            row.Contract_Length,
+            row.Total_Spend,
+            row.Last_Interaction,
+        ]
+        for row in customer_data.data
+    ]
     for row in data_rows:
         if len(row) != len(columns):
-            raise HTTPException(status_code=400, detail=f"Each row must have {len(columns)} values--[Invalid input shape]")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Each row must have {len(columns)} values — invalid input shape.",
+            )
     try:
         df = pd.DataFrame(data_rows, columns=columns)
         processed = preprocessor.transform(df)
-        processed = processed.reindex(columns=model_columns, fill_value=0)
-        print("Processed columns (after reindex):", list(processed.columns))
-        print(processed.head())
+        processed = pd.DataFrame(processed, columns=model_columns)
         preds = model.predict(processed)
         return {"predictions": preds.tolist()}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error.")
 
-@app.get("/health")
+
+# ── Utility Endpoints ──────────────────────────────────────────────────────────
+
+@app.get("/health", summary="Health check")
 def health():
+    """Return service health status."""
     return {"status": "ok"}
 
-@app.get("/model_info")
+
+@app.get("/model_info", summary="Model metadata")
 def model_info():
-    return {"model": "RandomForest", "version": "1.0"}
+    """Return information about the loaded model."""
+    return {"model": "RandomForest", "version": "1.0", "features": model_columns}
 
-@app.post("/reload_model")
+
+@app.post("/reload_model", summary="Reload model from disk")
 def reload_model():
+    """Hot-reload the ML model from disk without restarting the server."""
     global model
-    model = joblib.load('models/random_forest_churn_from_script.pkl')
-    return
-
-
-
-
-
-
-
-
-##  code version 1.0 app.py with basic functionality with backend integration
-
-
-import joblib
-import pandas as pd
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List, Any
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
-
-# Load preprocessor, model, and model columns at startup
-preprocessor = joblib.load('models/preprocessor.pkl')
-model = joblib.load('models/random_forest_churn_from_script.pkl')
-model_columns = joblib.load('models/model_columns.pkl')
-
-app = FastAPI(title="Customer Churn Prediction API")
-
-class CustomerData(BaseModel):
-    data: List[List[Any]]  # Each item is a list of feature values
-
-@app.post("/predict")
-def predict(customer_data: CustomerData):
-    columns = model_columns
-    print("Expected columns:", columns)
-    print("Received data:", customer_data.data)
-    print("Expected number of columns:", len(columns))
-    for row in customer_data.data:
-        if len(row) != len(columns):
-            raise HTTPException(status_code=400, detail=f"Each row must have {len(columns)} values--[Inavlid input shape]")
-    try:
-        df = pd.DataFrame(customer_data.data, columns=columns)
-        processed = preprocessor.transform(df)
-        processed = processed.reindex(columns=model_columns, fill_value=0)
-        print("Processed columns (after reindex):", list(processed.columns))
-        print(processed.head())
-        preds = model.predict(processed)
-        return {"predictions": preds.tolist()}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-@app.get("/model_info")
-def model_info():
-    return {"model": "RandomForest", "version": "1.0"}
-
-@app.post("/reload_model")
-def reload_model():
-    global model
-    model = joblib.load('models/random_forest_churn_from_script.pkl')  # or update to v2 if you have it
+    model = joblib.load("models/random_forest_churn_from_script.pkl")
     return {"status": "model reloaded"}
-'''
-
-
-
-
-
